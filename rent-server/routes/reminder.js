@@ -2,6 +2,17 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 
+// 格式化日期为 YYYY-MM-DD
+const formatDate = (d) => {
+  if (!d) return '';
+  if (typeof d === 'string') return d.split('T')[0];
+  const date = new Date(d);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 // 获取催租模板列表
 router.get('/list', async (req, res) => {
   const { user_id } = req.query;
@@ -82,7 +93,7 @@ router.post('/render', async (req, res) => {
     content = content.replace(/\{tenant_name\}/g, t.tenant_name);
     content = content.replace(/\{house_no\}/g, t.house_no || '');
     content = content.replace(/\{total_fee\}/g, bills.length > 0 ? bills[0].total_fee : '0.00');
-    content = content.replace(/\{due_date\}/g, bills.length > 0 ? bills[0].due_date : '');
+    content = content.replace(/\{due_date\}/g, bills.length > 0 ? formatDate(bills[0].due_date) : '');
 
     res.json({ code: 200, data: { content, tenant_phone: t.tenant_phone } });
   } catch (err) {

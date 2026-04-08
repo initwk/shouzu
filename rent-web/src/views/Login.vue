@@ -1,7 +1,7 @@
 <template>
   <div class="login-box">
     <el-card class="login-card">
-      <h2 style="text-align:center;margin-bottom:30px;color:#303133">房东收租管理系统</h2>
+      <h2 style="text-align:center;margin-bottom:30px;color:#303133;font-size:22px">房东收租管理系统</h2>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="登录" name="login">
           <el-form :model="loginForm" @submit.prevent="handleLogin">

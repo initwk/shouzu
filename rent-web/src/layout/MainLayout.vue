@@ -1,14 +1,14 @@
 <template>
   <el-container style="height: 100vh">
     <!-- 左侧侧边栏 -->
-    <el-aside width="220px" style="background: #304156">
+    <el-aside width="220px" class="sidebar">
       <div class="logo">房东收租系统</div>
       <el-menu
         :default-active="$route.path"
         router
-        background-color="#304156"
-        text-color="#bfcbd9"
-        active-text-color="#409EFF"
+        :background-color="sidebarBg"
+        :text-color="sidebarText"
+        :active-text-color="sidebarActive"
       >
         <el-menu-item index="/dashboard">
           <el-icon><Odometer /></el-icon>
@@ -51,16 +51,29 @@
 
     <el-container>
       <!-- 顶部导航 -->
-      <el-header style="background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;justify-content:space-between;padding:0 20px">
-        <span style="font-size:16px;font-weight:600">{{ $route.meta.title || '仪表盘' }}</span>
-        <div style="display:flex;align-items:center;gap:15px">
-          <span style="color:#666">{{ user.nickname || user.username }}</span>
+      <el-header class="header">
+        <span class="header-title">{{ $route.meta.title || '仪表盘' }}</span>
+        <div class="header-actions">
+          <el-dropdown @command="switchTheme" trigger="click">
+            <el-button size="small">
+              <el-icon><Brush /></el-icon>
+              {{ themeLabel }}
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="light">经典亮白</el-dropdown-item>
+                <el-dropdown-item command="dark">暗夜模式</el-dropdown-item>
+                <el-dropdown-item command="green">护眼绿</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <span class="user-name">{{ user.nickname || user.username }}</span>
           <el-button type="danger" size="small" @click="logout">退出登录</el-button>
         </div>
       </el-header>
 
       <!-- 主内容 -->
-      <el-main style="background:#f5f5f5;padding:20px">
+      <el-main class="main-content">
         <router-view />
       </el-main>
     </el-container>
@@ -68,13 +81,37 @@
 </template>
 
 <script setup>
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Odometer, House, User, Document, Memo, Bell, Tickets, TrendCharts, Setting } from '@element-plus/icons-vue'
+import { Odometer, House, User, Document, Memo, Bell, Tickets, TrendCharts, Setting, Brush } from '@element-plus/icons-vue'
 import { useUser } from '../composables/useUser'
 
 const router = useRouter()
 const user = useUser()
+
+const currentTheme = ref(localStorage.getItem('theme') || 'light')
+const themeLabels = { light: '经典亮白', dark: '暗夜模式', green: '护眼绿' }
+const themeLabel = computed(() => themeLabels[currentTheme.value])
+
+const sidebarColors = {
+  light: { bg: '#304156', text: '#bfcbd9', active: '#409EFF' },
+  dark: { bg: '#1a1a2e', text: '#a8b2c1', active: '#4fc3f7' },
+  green: { bg: '#2d4a3e', text: '#c8d8cf', active: '#66bb6a' }
+}
+const sidebarBg = computed(() => sidebarColors[currentTheme.value].bg)
+const sidebarText = computed(() => sidebarColors[currentTheme.value].text)
+const sidebarActive = computed(() => sidebarColors[currentTheme.value].active)
+
+const switchTheme = (theme) => {
+  currentTheme.value = theme
+  document.documentElement.setAttribute('data-theme', theme)
+  localStorage.setItem('theme', theme)
+}
+
+onMounted(() => {
+  document.documentElement.setAttribute('data-theme', currentTheme.value)
+})
 
 const logout = async () => {
   try {
@@ -86,6 +123,9 @@ const logout = async () => {
 </script>
 
 <style scoped>
+.sidebar {
+  background: var(--sidebar-bg);
+}
 .logo {
   height: 60px;
   line-height: 60px;
@@ -93,9 +133,36 @@ const logout = async () => {
   color: #fff;
   font-size: 18px;
   font-weight: bold;
-  background: #263445;
+  background: var(--sidebar-logo-bg);
 }
 .el-menu {
   border-right: none;
+  font-size: 15px;
+}
+.header {
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+}
+.header-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.user-name {
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+.main-content {
+  background: var(--content-bg);
+  padding: 20px;
 }
 </style>
