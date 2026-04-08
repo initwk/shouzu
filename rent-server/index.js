@@ -23,6 +23,17 @@ app.get('/', (req, res) => {
   res.send('房东收租管理系统 - 后端服务运行中');
 });
 
+// 404 处理
+app.use((req, res) => {
+  res.status(404).json({ code: 404, msg: '接口不存在' });
+});
+
+// 全局错误处理
+app.use((err, req, res, next) => {
+  console.error('服务器错误:', err);
+  res.status(500).json({ code: 500, msg: '服务器内部错误' });
+});
+
 const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`后端服务已启动：http://localhost:${PORT}`);

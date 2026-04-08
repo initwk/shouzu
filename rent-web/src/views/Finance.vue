@@ -51,7 +51,7 @@
     <!-- 缴费明细 -->
     <el-card>
       <template #header><span style="font-weight:bold">缴费明细</span></template>
-      <el-table :data="bills" stripe border>
+      <el-table :data="pagedBills" stripe border>
         <el-table-column prop="bill_month" label="月份" width="90" />
         <el-table-column prop="tenant_name" label="租客" width="80" />
         <el-table-column prop="house_no" label="房号" width="120" />
@@ -70,6 +70,7 @@
         </el-table-column>
         <el-table-column prop="payment_time" label="缴费时间" width="160" />
       </el-table>
+      <el-pagination background layout="total, prev, pager, next, sizes" :total="bills.length" v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 50]" style="margin-top:15px;justify-content:flex-end" />
     </el-card>
   </div>
 </template>
@@ -77,10 +78,15 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import request from '../utils/request'
+import { useUser } from '../composables/useUser'
 
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user = useUser()
 const bills = ref([])
 const dateRange = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
+
+const pagedBills = computed(() => bills.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
 
 const summary = computed(() => {
   const paid = bills.value.filter(b => b.bill_status === 1)
@@ -94,16 +100,18 @@ const summary = computed(() => {
 })
 
 const loadData = async () => {
-  const res = await request.get('/bill/list', {
-    params: { user_id: user.id }
-  })
-  if (res.data.code === 200) {
-    let data = res.data.data
-    if (dateRange.value && dateRange.value.length === 2) {
-      data = data.filter(b => b.due_date >= dateRange.value[0] && b.due_date <= dateRange.value[1])
+  try {
+    const res = await request.get('/bill/list', {
+      params: { user_id: user.id }
+    })
+    if (res.data.code === 200) {
+      let data = res.data.data
+      if (dateRange.value && dateRange.value.length === 2) {
+        data = data.filter(b => b.due_date >= dateRange.value[0] && b.due_date <= dateRange.value[1])
+      }
+      bills.value = data
     }
-    bills.value = data
-  }
+  } catch {}
 }
 
 onMounted(loadData)

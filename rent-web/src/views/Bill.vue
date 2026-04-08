@@ -27,7 +27,7 @@
 
     <!-- 数据表格 -->
     <el-card>
-      <el-table :data="list" stripe border>
+      <el-table :data="pagedList" stripe border>
         <el-table-column prop="bill_month" label="月份" width="90" />
         <el-table-column prop="tenant_name" label="租客" width="80" />
         <el-table-column prop="house_no" label="房号" width="120" />
@@ -42,18 +42,27 @@
         <el-table-column prop="due_date" label="到期日" width="110" />
         <el-table-column prop="bill_status" label="状态" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.bill_status === 1 ? 'success' : row.bill_status === 2 ? 'danger' : 'warning'">
-              {{ ['', '已缴费', '逾期'][row.bill_status] || '未缴费' }}
+            <el-tag :type="statusType(row.bill_status)">
+              {{ statusText(row.bill_status) }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.bill_status === 0" size="small" type="success" @click="openPayDialog(row)">标记缴费</el-button>
+            <el-button v-if="row.bill_status === 0 || row.bill_status === 2" size="small" type="success" @click="openPayDialog(row)">标记缴费</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        background
+        layout="total, prev, pager, next, sizes"
+        :total="list.length"
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50]"
+        style="margin-top:15px;text-align:right"
+      />
     </el-card>
 
     <!-- 生成账单弹窗 -->
@@ -107,11 +116,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../utils/request'
+import { useUser } from '../composables/useUser'
 
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user = useUser()
 const list = ref([])
 const keyword = ref('')
 const billStatus = ref('')
@@ -120,20 +130,38 @@ const genDialogVisible = ref(false)
 const payDialogVisible = ref(false)
 const saving = ref(false)
 const rentedHouses = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 const genForm = ref({ house_id: '', bill_month: '', rent: 0, other_fee: 0, due_date: '' })
 const payForm = ref({ id: '', payment_type: 1, payment_remark: '' })
 
+const statusText = (s) => ({ 0: '未缴费', 1: '已缴费', 2: '逾期' })[s] || '未知'
+const statusType = (s) => ({ 0: 'warning', 1: 'success', 2: 'danger' })[s] || 'info'
+
+const pagedList = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return list.value.slice(start, start + pageSize.value)
+})
+
 const loadData = async () => {
-  const res = await request.get('/bill/list', {
-    params: { user_id: user.id, keyword: keyword.value, bill_status: billStatus.value, bill_month: billMonth.value }
-  })
-  if (res.data.code === 200) list.value = res.data.data
+  try {
+    const res = await request.get('/bill/list', {
+      params: { user_id: user.id, keyword: keyword.value, bill_status: billStatus.value, bill_month: billMonth.value }
+    })
+    if (res.data.code === 200) list.value = res.data.data
+  } catch (e) {
+    ElMessage.error('加载账单列表失败')
+  }
 }
 
 const loadRentedHouses = async () => {
-  const res = await request.get('/house/list', { params: { user_id: user.id, house_status: 1 } })
-  if (res.data.code === 200) rentedHouses.value = res.data.data
+  try {
+    const res = await request.get('/house/list', { params: { user_id: user.id, house_status: 1 } })
+    if (res.data.code === 200) rentedHouses.value = res.data.data
+  } catch (e) {
+    ElMessage.error('加载房源列表失败')
+  }
 }
 
 const onHouseChange = (houseId) => {
@@ -143,7 +171,12 @@ const onHouseChange = (houseId) => {
 
 const openGenerateDialog = async () => {
   genForm.value = { house_id: '', bill_month: '', rent: 0, other_fee: 0, due_date: '' }
-  await loadRentedHouses()
+  try {
+    await loadRentedHouses()
+  } catch (e) {
+    ElMessage.error('加载房源失败')
+    return
+  }
   genDialogVisible.value = true
 }
 
@@ -170,6 +203,8 @@ const handleGenerate = async () => {
     } else {
       ElMessage.error(res.data.msg)
     }
+  } catch (e) {
+    ElMessage.error('生成账单失败')
   } finally {
     saving.value = false
   }
@@ -191,17 +226,27 @@ const handlePay = async () => {
     } else {
       ElMessage.error(res.data.msg)
     }
+  } catch (e) {
+    ElMessage.error('标记缴费失败')
   } finally {
     saving.value = false
   }
 }
 
 const handleDelete = async (row) => {
-  await ElMessageBox.confirm('确认删除该账单？', '提示', { type: 'warning' })
-  const res = await request.post('/bill/delete', { id: row.id })
-  if (res.data.code === 200) {
-    ElMessage.success('删除成功')
-    loadData()
+  try {
+    await ElMessageBox.confirm('确认删除该账单？', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    const res = await request.post('/bill/delete', { id: row.id })
+    if (res.data.code === 200) {
+      ElMessage.success('删除成功')
+      loadData()
+    }
+  } catch (e) {
+    ElMessage.error('删除账单失败')
   }
 }
 

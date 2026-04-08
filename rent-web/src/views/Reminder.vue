@@ -74,8 +74,9 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../utils/request'
+import { useUser } from '../composables/useUser'
 
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user = useUser()
 const list = ref([])
 const tenants = ref([])
 const dialogVisible = ref(false)
@@ -87,13 +88,21 @@ const renderTenantId = ref('')
 const renderContent = ref('')
 
 const loadData = async () => {
-  const res = await request.get('/reminder/list', { params: { user_id: user.id } })
-  if (res.data.code === 200) list.value = res.data.data
+  try {
+    const res = await request.get('/reminder/list', { params: { user_id: user.id } })
+    if (res.data.code === 200) list.value = res.data.data
+  } catch (e) {
+    ElMessage.error('加载模板列表失败')
+  }
 }
 
 const loadTenants = async () => {
-  const res = await request.get('/tenant/list', { params: { user_id: user.id } })
-  if (res.data.code === 200) tenants.value = res.data.data
+  try {
+    const res = await request.get('/tenant/list', { params: { user_id: user.id } })
+    if (res.data.code === 200) tenants.value = res.data.data
+  } catch (e) {
+    ElMessage.error('加载租客列表失败')
+  }
 }
 
 const openDialog = (row) => {
@@ -117,6 +126,8 @@ const handleSave = async () => {
     } else {
       ElMessage.error(res.data.msg)
     }
+  } catch (e) {
+    ElMessage.error('保存模板失败')
   } finally {
     saving.value = false
   }
@@ -132,21 +143,33 @@ const openRenderDialog = async (row) => {
 
 const handleRender = async () => {
   if (!renderTenantId.value) return ElMessage.warning('请选择租客')
-  const res = await request.post('/reminder/render', {
-    template_id: currentTemplateId.value,
-    tenant_id: renderTenantId.value
-  })
-  if (res.data.code === 200) {
-    renderContent.value = res.data.data.content
+  try {
+    const res = await request.post('/reminder/render', {
+      template_id: currentTemplateId.value,
+      tenant_id: renderTenantId.value
+    })
+    if (res.data.code === 200) {
+      renderContent.value = res.data.data.content
+    }
+  } catch (e) {
+    ElMessage.error('生成催租内容失败')
   }
 }
 
 const handleDelete = async (row) => {
-  await ElMessageBox.confirm('确认删除该模板？', '提示', { type: 'warning' })
-  const res = await request.post('/reminder/delete', { id: row.id })
-  if (res.data.code === 200) {
-    ElMessage.success('删除成功')
-    loadData()
+  try {
+    await ElMessageBox.confirm('确认删除该模板？', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    const res = await request.post('/reminder/delete', { id: row.id })
+    if (res.data.code === 200) {
+      ElMessage.success('删除成功')
+      loadData()
+    }
+  } catch (e) {
+    ElMessage.error('删除模板失败')
   }
 }
 

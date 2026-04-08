@@ -17,7 +17,8 @@ const routes = [
       { path: 'finance', name: 'Finance', component: () => import('../views/Finance.vue'), meta: { title: '财务统计' } },
       { path: 'setting', name: 'Setting', component: () => import('../views/Setting.vue'), meta: { title: '系统设置' } },
     ]
-  }
+  },
+  { path: '/:pathMatch(.*)*', redirect: '/dashboard' }
 ]
 
 const router = createRouter({
@@ -27,15 +28,20 @@ const router = createRouter({
 
 // 路由守卫
 router.beforeEach((to, from, next) => {
+  // 更新页面标题
+  document.title = to.meta.title ? `${to.meta.title} - 房东收租系统` : '房东收租系统'
   if (to.path === '/login') {
-    next()
-  } else {
-    const user = localStorage.getItem('user')
-    if (!user) {
-      next('/login')
-    } else {
-      next()
+    return next()
+  }
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || 'null')
+    if (!user || !user.id) {
+      return next('/login')
     }
+    next()
+  } catch (e) {
+    localStorage.removeItem('user')
+    next('/login')
   }
 })
 

@@ -3,14 +3,21 @@ import { ElMessage } from 'element-plus'
 import router from '../router'
 
 const request = axios.create({
-  baseURL: 'http://localhost:3000/api',
+  baseURL: '/api',
   timeout: 10000
 })
 
 request.interceptors.response.use(
   response => response,
   error => {
-    ElMessage.error('网络错误，请检查后端服务')
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem('user')
+      router.push('/login')
+    } else if (error.code === 'ECONNABORTED') {
+      ElMessage.error('请求超时，请重试')
+    } else {
+      ElMessage.error('网络错误，请检查后端服务')
+    }
     return Promise.reject(error)
   }
 )

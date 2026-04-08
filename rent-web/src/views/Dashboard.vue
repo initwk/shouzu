@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div v-loading="loading">
     <!-- 统计卡片 -->
     <el-row :gutter="20" style="margin-bottom:20px">
       <el-col :span="6">
@@ -84,14 +84,22 @@
 import { ref, onMounted } from 'vue'
 import { House, User, Bell, TrendCharts } from '@element-plus/icons-vue'
 import request from '../utils/request'
+import { useUser } from '../composables/useUser'
 
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user = useUser()
 const stats = ref({})
+const loading = ref(false)
 
 onMounted(async () => {
-  const res = await request.get('/dashboard/stats', { params: { user_id: user.id } })
-  if (res.data.code === 200) {
-    stats.value = res.data.data
+  loading.value = true
+  try {
+    const res = await request.get('/dashboard/stats', { params: { user_id: user.id } })
+    if (res.data.code === 200) {
+      stats.value = res.data.data
+    }
+  } catch {
+  } finally {
+    loading.value = false
   }
 })
 </script>

@@ -29,7 +29,7 @@ router.post('/settle', async (req, res) => {
 
     // 获取押金
     const [tenants] = await conn.query('SELECT deposit FROM tenant_info WHERE id = ?', [tenant_id]);
-    const deposit = tenants.length > 0 ? parseFloat(tenants[tenant_id]) || 0 : 0;
+    const deposit = tenants.length > 0 ? parseFloat(tenants[0].deposit) || 0 : 0;
 
     // 获取未缴费用
     const [bills] = await conn.query(

@@ -19,19 +19,19 @@
 
     <!-- 数据表格 -->
     <el-card>
-      <el-table :data="list" stripe border>
+      <el-table :data="pagedList" stripe border>
         <el-table-column prop="community_name" label="小区" />
         <el-table-column prop="house_no" label="房号" width="130" />
         <el-table-column prop="reading_time" label="抄表日期" width="110" />
         <el-table-column prop="last_electric" label="上期电表" width="90" />
         <el-table-column prop="current_electric" label="本期电表" width="90" />
         <el-table-column label="用电量" width="90">
-          <template #default="{ row }">{{ (row.current_electric - row.last_electric).toFixed(2) }}</template>
+          <template #default="{ row }">{{ Math.max(0, row.current_electric - row.last_electric).toFixed(2) }}</template>
         </el-table-column>
         <el-table-column prop="last_water" label="上期水表" width="90" />
         <el-table-column prop="current_water" label="本期水表" width="90" />
         <el-table-column label="用水量" width="90">
-          <template #default="{ row }">{{ (row.current_water - row.last_water).toFixed(2) }}</template>
+          <template #default="{ row }">{{ Math.max(0, row.current_water - row.last_water).toFixed(2) }}</template>
         </el-table-column>
         <el-table-column prop="operator" label="抄表人" width="80" />
         <el-table-column label="操作" width="100" fixed="right">
@@ -40,6 +40,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination background layout="total, prev, pager, next, sizes" :total="list.length" v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 50]" />
     </el-card>
 
     <!-- 新增弹窗 -->
@@ -78,11 +79,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../utils/request'
+import { useUser } from '../composables/useUser'
 
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user = useUser()
 const list = ref([])
 const houseId = ref('')
 const allHouses = ref([])
@@ -94,11 +96,17 @@ const defaultForm = () => ({
   house_id: '', reading_time: '', last_electric: 0, current_electric: 0, last_water: 0, current_water: 0, operator: ''
 })
 
+const currentPage = ref(1)
+const pageSize = ref(10)
+const pagedList = computed(() => list.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+
 const loadData = async () => {
-  const res = await request.get('/meter/list', {
-    params: { user_id: user.id, house_id: houseId.value }
-  })
-  if (res.data.code === 200) list.value = res.data.data
+  try {
+    const res = await request.get('/meter/list', {
+      params: { user_id: user.id, house_id: houseId.value }
+    })
+    if (res.data.code === 200) list.value = res.data.data
+  } catch (e) {}
 }
 
 const loadHouses = async () => {
@@ -135,13 +143,17 @@ const handleSave = async () => {
     } else {
       ElMessage.error(res.data.msg)
     }
-  } finally {
+  } catch (e) {} finally {
     saving.value = false
   }
 }
 
 const handleDelete = async (row) => {
-  await ElMessageBox.confirm('确认删除该抄表记录？', '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm('确认删除该抄表记录？', '提示', { type: 'warning' })
+  } catch (e) {
+    return
+  }
   const res = await request.post('/meter/delete', { id: row.id })
   if (res.data.code === 200) {
     ElMessage.success('删除成功')

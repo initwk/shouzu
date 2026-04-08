@@ -17,7 +17,7 @@
 
     <!-- 数据表格 -->
     <el-card>
-      <el-table :data="list" stripe border>
+      <el-table :data="pagedList" stripe border>
         <el-table-column prop="tenant_name" label="姓名" width="100" />
         <el-table-column prop="tenant_phone" label="手机号" width="130" />
         <el-table-column prop="id_card" label="身份证" width="180" />
@@ -33,6 +33,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination background layout="total, prev, pager, next, sizes" :total="list.length" v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 50]" />
     </el-card>
 
     <!-- 新增/编辑弹窗 -->
@@ -71,11 +72,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../utils/request'
+import { useUser } from '../composables/useUser'
 
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user = useUser()
 const list = ref([])
 const keyword = ref('')
 const dialogVisible = ref(false)
@@ -88,11 +90,17 @@ const defaultForm = () => ({
   check_in_time: '', contract_end_time: '', deposit: 0
 })
 
+const currentPage = ref(1)
+const pageSize = ref(10)
+const pagedList = computed(() => list.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+
 const loadData = async () => {
-  const res = await request.get('/tenant/list', {
-    params: { user_id: user.id, keyword: keyword.value }
-  })
-  if (res.data.code === 200) list.value = res.data.data
+  try {
+    const res = await request.get('/tenant/list', {
+      params: { user_id: user.id, keyword: keyword.value }
+    })
+    if (res.data.code === 200) list.value = res.data.data
+  } catch (e) {}
 }
 
 const loadVacantHouses = async () => {
@@ -121,21 +129,27 @@ const handleSave = async () => {
   try {
     const url = form.value.id ? '/tenant/update' : '/tenant/add'
     const params = form.value.id ? form.value : { ...form.value, user_id: user.id }
-    const res = await request.post(url, params)
-    if (res.data.code === 200) {
-      ElMessage.success('保存成功')
-      dialogVisible.value = false
-      loadData()
-    } else {
-      ElMessage.error(res.data.msg)
-    }
+    try {
+      const res = await request.post(url, params)
+      if (res.data.code === 200) {
+        ElMessage.success('保存成功')
+        dialogVisible.value = false
+        loadData()
+      } else {
+        ElMessage.error(res.data.msg)
+      }
+    } catch (e) {}
   } finally {
     saving.value = false
   }
 }
 
 const handleDelete = async (row) => {
-  await ElMessageBox.confirm('确认删除该租客？关联房源将被释放为空置状态。', '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm('确认删除该租客？关联房源将被释放为空置状态。', '提示', { type: 'warning' })
+  } catch (e) {
+    return
+  }
   const res = await request.post('/tenant/delete', { id: row.id })
   if (res.data.code === 200) {
     ElMessage.success('删除成功')

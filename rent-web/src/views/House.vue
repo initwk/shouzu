@@ -23,7 +23,7 @@
 
     <!-- 数据表格 -->
     <el-card>
-      <el-table :data="list" stripe border>
+      <el-table :data="pagedList" stripe border>
         <el-table-column prop="community_name" label="小区名称" />
         <el-table-column prop="house_no" label="楼栋房号" />
         <el-table-column prop="area" label="面积(㎡)" width="90" />
@@ -48,6 +48,14 @@
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        style="margin-top:15px; justify-content: flex-end"
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next, jumper"
+        :total="list.length"
+      />
     </el-card>
 
     <!-- 新增/编辑弹窗 -->
@@ -87,17 +95,22 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../utils/request'
+import { useUser } from '../composables/useUser'
 
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user = useUser()
 const list = ref([])
 const keyword = ref('')
 const houseStatus = ref('')
 const dialogVisible = ref(false)
 const saving = ref(false)
 const form = ref({})
+const currentPage = ref(1)
+const pageSize = ref(10)
+
+const pagedList = computed(() => list.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
 
 const defaultForm = () => ({
   community_name: '', house_no: '', area: 0, house_type: '',
@@ -105,10 +118,13 @@ const defaultForm = () => ({
 })
 
 const loadData = async () => {
-  const res = await request.get('/house/list', {
-    params: { user_id: user.id, keyword: keyword.value, house_status: houseStatus.value }
-  })
-  if (res.data.code === 200) list.value = res.data.data
+  try {
+    const res = await request.get('/house/list', {
+      params: { user_id: user.id, keyword: keyword.value, house_status: houseStatus.value }
+    })
+    if (res.data.code === 200) list.value = res.data.data
+  } catch {
+  }
 }
 
 const openDialog = (row) => {
@@ -132,13 +148,18 @@ const handleSave = async () => {
     } else {
       ElMessage.error(res.data.msg)
     }
+  } catch {
   } finally {
     saving.value = false
   }
 }
 
 const handleDelete = async (row) => {
-  await ElMessageBox.confirm('确认删除该房源？', '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm('确认删除该房源？', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
   const res = await request.post('/house/delete', { id: row.id })
   if (res.data.code === 200) {
     ElMessage.success('删除成功')

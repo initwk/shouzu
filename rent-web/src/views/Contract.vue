@@ -14,7 +14,7 @@
 
     <!-- 数据表格 -->
     <el-card>
-      <el-table :data="list" stripe border>
+      <el-table :data="pagedList" stripe border>
         <el-table-column prop="tenant_name" label="租客姓名" width="100" />
         <el-table-column prop="tenant_phone" label="手机号" width="130" />
         <el-table-column prop="community_name" label="小区" />
@@ -33,23 +33,31 @@
           <template #default="{ row }">{{ getDaysLeft(row.contract_end_time) }} 天</template>
         </el-table-column>
       </el-table>
+      <el-pagination background layout="total, prev, pager, next, sizes" :total="list.length" v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 50]" style="margin-top:15px;justify-content:flex-end" />
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import request from '../utils/request'
+import { useUser } from '../composables/useUser'
 
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user = useUser()
 const list = ref([])
 const keyword = ref('')
+const currentPage = ref(1)
+const pageSize = ref(10)
+
+const pagedList = computed(() => list.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
 
 const loadData = async () => {
-  const res = await request.get('/tenant/list', {
-    params: { user_id: user.id, keyword: keyword.value }
-  })
-  if (res.data.code === 200) list.value = res.data.data
+  try {
+    const res = await request.get('/tenant/list', {
+      params: { user_id: user.id, keyword: keyword.value }
+    })
+    if (res.data.code === 200) list.value = res.data.data
+  } catch {}
 }
 
 const getDaysLeft = (endDate) => {

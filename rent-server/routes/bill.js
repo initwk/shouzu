@@ -28,7 +28,7 @@ router.get('/list', async (req, res) => {
     const [rows] = await pool.query(sql, params);
     res.json({ code: 200, data: rows });
   } catch (err) {
-    res.json({ code: 500, msg: '查询失败', error: err.message });
+    res.json({ code: 500, msg: '查询失败' });
   }
 });
 
@@ -36,7 +36,16 @@ router.get('/list', async (req, res) => {
 router.post('/generate', async (req, res) => {
   const { user_id, house_id, tenant_id, bill_month, rent, other_fee, due_date } = req.body;
   try {
-    // 获取房源信息（水电单价、公摊系数）
+    // 防止重复生成同月账单
+    const [exist] = await pool.query(
+      'SELECT id FROM bill_info WHERE house_id = ? AND tenant_id = ? AND bill_month = ?',
+      [house_id, tenant_id, bill_month]
+    );
+    if (exist.length > 0) {
+      return res.json({ code: 500, msg: '该月账单已存在' });
+    }
+
+    // 获取房源信息
     const [houses] = await pool.query('SELECT water_price, electric_price, share_coefficient FROM house_info WHERE id = ?', [house_id]);
     if (houses.length === 0) {
       return res.json({ code: 500, msg: '房源不存在' });
@@ -61,11 +70,31 @@ router.post('/generate', async (req, res) => {
     await pool.query(
       `INSERT INTO bill_info (user_id, house_id, tenant_id, bill_month, rent, water_fee, electric_fee, other_fee, total_fee, due_date)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [user_id, house_id, tenant_id, bill_month, rent || 0, waterFee.toFixed(2), electricFee.toFixed(2), other_fee || 0, totalFee.toFixed(2), due_date]
+      [user_id, house_id, tenant_id, bill_month, rent || 0, Number(waterFee.toFixed(2)), Number(electricFee.toFixed(2)), other_fee || 0, Number(totalFee.toFixed(2)), due_date]
     );
     res.json({ code: 200, msg: '账单生成成功' });
   } catch (err) {
-    res.json({ code: 500, msg: '生成失败', error: err.message });
+    res.json({ code: 500, msg: '生成失败' });
+  }
+});
+
+// 编辑账单
+router.post('/update', async (req, res) => {
+  const { id, rent, water_fee, electric_fee, other_fee, late_fee, due_date } = req.body;
+  try {
+    const rentVal = parseFloat(rent) || 0;
+    const waterVal = parseFloat(water_fee) || 0;
+    const electricVal = parseFloat(electric_fee) || 0;
+    const otherVal = parseFloat(other_fee) || 0;
+    const lateVal = parseFloat(late_fee) || 0;
+    const totalVal = rentVal + waterVal + electricVal + otherVal + lateVal;
+    await pool.query(
+      `UPDATE bill_info SET rent=?, water_fee=?, electric_fee=?, other_fee=?, late_fee=?, total_fee=?, due_date=? WHERE id=?`,
+      [rentVal, waterVal, electricVal, otherVal, lateVal, Number(totalVal.toFixed(2)), due_date, id]
+    );
+    res.json({ code: 200, msg: '修改成功' });
+  } catch (err) {
+    res.json({ code: 500, msg: '修改失败' });
   }
 });
 
@@ -79,22 +108,41 @@ router.post('/pay', async (req, res) => {
     );
     res.json({ code: 200, msg: '标记成功' });
   } catch (err) {
-    res.json({ code: 500, msg: '标记失败', error: err.message });
+    res.json({ code: 500, msg: '标记失败' });
   }
 });
 
-// 更新滞纳金
-router.post('/late-fee', async (req, res) => {
-  const { id, late_fee } = req.body;
+// 自动计算滞纳金（基于 sys_setting.late_fee_rate 和逾期天数）
+router.post('/calc-late-fee', async (req, res) => {
+  const { user_id } = req.body;
   try {
-    // 更新滞纳金并重新计算总费用
-    await pool.query(
-      `UPDATE bill_info SET late_fee = ?, total_fee = rent + water_fee + electric_fee + other_fee + ? WHERE id = ?`,
-      [late_fee, late_fee, id]
+    // 获取滞纳金费率
+    const [settings] = await pool.query('SELECT late_fee_rate FROM sys_setting WHERE user_id = ?', [user_id]);
+    const rate = settings.length > 0 ? parseFloat(settings[0].late_fee_rate) || 0 : 0;
+    if (rate <= 0) {
+      return res.json({ code: 200, msg: '未配置滞纳金费率，跳过计算', data: { count: 0 } });
+    }
+    // 查询所有逾期未缴账单
+    const [overdues] = await pool.query(
+      `SELECT id, total_fee, due_date FROM bill_info WHERE user_id = ? AND bill_status = 0 AND due_date < CURDATE()`,
+      [user_id]
     );
-    res.json({ code: 200, msg: '更新成功' });
+    let count = 0;
+    for (const bill of overdues) {
+      const dueDate = new Date(bill.due_date);
+      const today = new Date();
+      const diffDays = Math.ceil((today - dueDate) / (1000 * 60 * 60 * 24));
+      const lateFee = parseFloat(bill.total_fee) * rate / 100 * diffDays;
+      const newTotal = parseFloat(bill.total_fee) + lateFee;
+      await pool.query(
+        'UPDATE bill_info SET late_fee = ?, total_fee = ?, bill_status = 2 WHERE id = ?',
+        [Number(lateFee.toFixed(2)), Number(newTotal.toFixed(2)), bill.id]
+      );
+      count++;
+    }
+    res.json({ code: 200, msg: `已更新 ${count} 条逾期账单`, data: { count } });
   } catch (err) {
-    res.json({ code: 500, msg: '更新失败', error: err.message });
+    res.json({ code: 500, msg: '计算失败' });
   }
 });
 
@@ -105,7 +153,7 @@ router.post('/delete', async (req, res) => {
     await pool.query('DELETE FROM bill_info WHERE id = ?', [id]);
     res.json({ code: 200, msg: '删除成功' });
   } catch (err) {
-    res.json({ code: 500, msg: '删除失败', error: err.message });
+    res.json({ code: 500, msg: '删除失败' });
   }
 });
 
@@ -126,7 +174,7 @@ router.get('/detail', async (req, res) => {
     }
     res.json({ code: 200, data: rows[0] });
   } catch (err) {
-    res.json({ code: 500, msg: '查询失败', error: err.message });
+    res.json({ code: 500, msg: '查询失败' });
   }
 });
 

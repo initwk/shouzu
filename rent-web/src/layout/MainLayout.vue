@@ -68,16 +68,20 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
 import { Odometer, House, User, Document, Memo, Bell, Tickets, TrendCharts, Setting } from '@element-plus/icons-vue'
+import { useUser } from '../composables/useUser'
 
 const router = useRouter()
-const user = reactive(JSON.parse(localStorage.getItem('user') || '{}'))
+const user = useUser()
 
-const logout = () => {
-  localStorage.removeItem('user')
-  router.push('/login')
+const logout = async () => {
+  try {
+    await ElMessageBox.confirm('确认退出登录？', '提示', { type: 'warning' })
+    localStorage.removeItem('user')
+    router.push('/login')
+  } catch { /* 取消 */ }
 }
 </script>
 

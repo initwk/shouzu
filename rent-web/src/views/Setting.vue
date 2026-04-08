@@ -33,6 +33,9 @@
             <el-option v-for="h in rentedHouses" :key="h.id" :label="`${h.community_name} - ${h.house_no}`" :value="h.id" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="checkoutTenantInfo" label="当前租客">
+          <span>{{ checkoutTenantInfo.tenant_name || '未知' }}（押金：{{ checkoutTenantInfo.deposit ?? '-' }} 元）</span>
+        </el-form-item>
         <el-form-item label="退房日期" required>
           <el-date-picker v-model="checkoutForm.check_out_time" type="date" value-format="YYYY-MM-DD" style="width:100%" />
         </el-form-item>
@@ -55,8 +58,9 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../utils/request'
+import { useUser } from '../composables/useUser'
 
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user = useUser()
 const form = ref({
   default_water_price: 5, default_electric_price: 1,
   default_share_coefficient: 1, reminder_days: '3,1,0', late_fee_rate: 0
@@ -65,32 +69,47 @@ const saving = ref(false)
 const rentedHouses = ref([])
 const checkoutLoading = ref(false)
 const checkoutForm = ref({ house_id: '', check_out_time: '', deduct_fee: 0, remark: '' })
+const checkoutTenantInfo = ref(null)
 
 const loadData = async () => {
-  const res = await request.get('/setting/detail', { params: { user_id: user.id } })
-  if (res.data.code === 200 && res.data.data) {
-    form.value = res.data.data
-  }
+  try {
+    const res = await request.get('/setting/detail', { params: { user_id: user.id } })
+    if (res.data.code === 200 && res.data.data) {
+      form.value = res.data.data
+    }
+  } catch {}
 }
 
 const loadRentedHouses = async () => {
-  const res = await request.get('/house/list', { params: { user_id: user.id, house_status: 1 } })
-  if (res.data.code === 200) rentedHouses.value = res.data.data
+  try {
+    const res = await request.get('/house/list', { params: { user_id: user.id, house_status: 1 } })
+    if (res.data.code === 200) rentedHouses.value = res.data.data
+  } catch {}
 }
 
 const onCheckoutHouseChange = (houseId) => {
-  // 自动填入当前租客
+  const house = rentedHouses.value.find(h => h.id === houseId)
+  if (house && house.current_tenant_id) {
+    checkoutTenantInfo.value = {
+      tenant_name: house.tenant_name || '',
+      deposit: house.deposit ?? null
+    }
+  } else {
+    checkoutTenantInfo.value = null
+  }
 }
 
 const handleSave = async () => {
   saving.value = true
   try {
-    const res = await request.post('/setting/update', { ...form.value, user_id: user.id })
-    if (res.data.code === 200) {
-      ElMessage.success('保存成功')
-    } else {
-      ElMessage.error(res.data.msg)
-    }
+    try {
+      const res = await request.post('/setting/update', { ...form.value, user_id: user.id })
+      if (res.data.code === 200) {
+        ElMessage.success('保存成功')
+      } else {
+        ElMessage.error(res.data.msg)
+      }
+    } catch {}
   } finally {
     saving.value = false
   }
@@ -104,7 +123,11 @@ const handleCheckout = async () => {
   if (!house || !house.current_tenant_id) {
     return ElMessage.warning('该房源没有绑定租客')
   }
-  await ElMessageBox.confirm('退房结算后，租客将被删除，房源变为空置，未缴账单将标记为已缴。确认继续？', '退房确认', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm('退房结算后，租客将被删除，房源变为空置，未缴账单将标记为已缴。确认继续？', '退房确认', { type: 'warning' })
+  } catch {
+    return
+  }
   checkoutLoading.value = true
   try {
     const res = await request.post('/checkout/settle', {
@@ -115,6 +138,7 @@ const handleCheckout = async () => {
     if (res.data.code === 200) {
       ElMessage.success(`退房结算成功，应退押金：${res.data.data.refundFee} 元`)
       checkoutForm.value = { house_id: '', check_out_time: '', deduct_fee: 0, remark: '' }
+      checkoutTenantInfo.value = null
       loadRentedHouses()
     } else {
       ElMessage.error(res.data.msg)
