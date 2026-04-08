@@ -20,6 +20,7 @@
           <el-button type="primary" @click="loadData">搜索</el-button>
         </el-col>
         <el-col :span="8" style="text-align:right">
+          <el-button type="warning" @click="calcLateFee">计算滞纳金</el-button>
           <el-button type="success" @click="openGenerateDialog()">生成账单</el-button>
         </el-col>
       </el-row>
@@ -47,8 +48,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="row.bill_status !== 1" size="small" @click="openEditDialog(row)">编辑</el-button>
             <el-button v-if="row.bill_status === 0 || row.bill_status === 2" size="small" type="success" @click="openPayDialog(row)">标记缴费</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -112,6 +114,37 @@
         <el-button type="primary" @click="handlePay" :loading="saving">确认缴费</el-button>
       </template>
     </el-dialog>
+
+    <!-- 编辑账单弹窗 -->
+    <el-dialog v-model="editDialogVisible" title="编辑账单" width="500px">
+      <el-form :model="editForm" label-width="100px">
+        <el-form-item label="月租金">
+          <el-input-number v-model="editForm.rent" :min="0" :precision="2" style="width:100%" @change="calcEditTotal" />
+        </el-form-item>
+        <el-form-item label="水费">
+          <el-input-number v-model="editForm.water_fee" :min="0" :precision="2" style="width:100%" @change="calcEditTotal" />
+        </el-form-item>
+        <el-form-item label="电费">
+          <el-input-number v-model="editForm.electric_fee" :min="0" :precision="2" style="width:100%" @change="calcEditTotal" />
+        </el-form-item>
+        <el-form-item label="其他费用">
+          <el-input-number v-model="editForm.other_fee" :min="0" :precision="2" style="width:100%" @change="calcEditTotal" />
+        </el-form-item>
+        <el-form-item label="滞纳金">
+          <el-input-number v-model="editForm.late_fee" :min="0" :precision="2" style="width:100%" @change="calcEditTotal" />
+        </el-form-item>
+        <el-form-item label="到期日期">
+          <el-date-picker v-model="editForm.due_date" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="总金额">
+          <span style="font-size:20px;font-weight:bold;color:#F56C6C">{{ editForm.total_fee }} 元</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleEditSave" :loading="saving">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -128,6 +161,7 @@ const billStatus = ref('')
 const billMonth = ref('')
 const genDialogVisible = ref(false)
 const payDialogVisible = ref(false)
+const editDialogVisible = ref(false)
 const saving = ref(false)
 const rentedHouses = ref([])
 const currentPage = ref(1)
@@ -135,6 +169,7 @@ const pageSize = ref(10)
 
 const genForm = ref({ house_id: '', bill_month: '', rent: 0, other_fee: 0, due_date: '' })
 const payForm = ref({ id: '', payment_type: 1, payment_remark: '' })
+const editForm = ref({ id: '', rent: 0, water_fee: 0, electric_fee: 0, other_fee: 0, late_fee: 0, total_fee: 0, due_date: '' })
 
 const statusText = (s) => ({ 0: '未缴费', 1: '已缴费', 2: '逾期' })[s] || '未知'
 const statusType = (s) => ({ 0: 'warning', 1: 'success', 2: 'danger' })[s] || 'info'
@@ -230,6 +265,58 @@ const handlePay = async () => {
     ElMessage.error('标记缴费失败')
   } finally {
     saving.value = false
+  }
+}
+
+const openEditDialog = (row) => {
+  editForm.value = {
+    id: row.id,
+    rent: Number(row.rent) || 0,
+    water_fee: Number(row.water_fee) || 0,
+    electric_fee: Number(row.electric_fee) || 0,
+    other_fee: Number(row.other_fee) || 0,
+    late_fee: Number(row.late_fee) || 0,
+    total_fee: Number(row.total_fee) || 0,
+    due_date: row.due_date
+  }
+  editDialogVisible.value = true
+}
+
+const calcEditTotal = () => {
+  const f = editForm.value
+  f.total_fee = Number((f.rent + f.water_fee + f.electric_fee + f.other_fee + f.late_fee).toFixed(2))
+}
+
+const handleEditSave = async () => {
+  saving.value = true
+  try {
+    const res = await request.post('/bill/update', editForm.value)
+    if (res.data.code === 200) {
+      ElMessage.success('修改成功')
+      editDialogVisible.value = false
+      loadData()
+    } else {
+      ElMessage.error(res.data.msg)
+    }
+  } catch (e) {
+    ElMessage.error('修改失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+const calcLateFee = async () => {
+  try {
+    await ElMessageBox.confirm('将根据系统设置中的滞纳金费率，自动计算所有逾期账单的滞纳金并更新状态。确认继续？', '计算滞纳金', { type: 'info' })
+  } catch { return }
+  try {
+    const res = await request.post('/bill/calc-late-fee', { user_id: user.id })
+    if (res.data.code === 200) {
+      ElMessage.success(res.data.msg)
+      loadData()
+    }
+  } catch (e) {
+    ElMessage.error('计算滞纳金失败')
   }
 }
 
